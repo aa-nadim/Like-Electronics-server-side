@@ -1,110 +1,119 @@
 const express = require('express')
-const bodyParser = require('body-parser');
-const cors = require('cors');
 const MongoClient = require('mongodb').MongoClient;
-const ObjectID = require('mongodb').ObjectID;
-require('dotenv').config()
+const ObjectId = require('mongodb').ObjectId;
+const cors = require('cors');
+require('dotenv').config();
+
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+const port = process.env.PORT || 8080;
+
+app.get('/', (req, res) => {
+    res.send('Welcome to Like-Electronics Server');
+})
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.ktjwr.mongodb.net/${process.env.DB_NAME}?retryWrites=true&w=majority`;
 
-const app = express()
-app.use(bodyParser.json());
-app.use(cors());
-const port = process.env.PORT || 5000
-
-app.get('/', (req, res) => {
-  res.send('Hello World!')
-})
 
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
 client.connect(err => {
-  const servicesCollection = client.db("LikeElectronics").collection("services");
-  const reviewsCollection = client.db("LikeElectronics").collection("reviews");
-  const booksCollection = client.db("LikeElectronics").collection("books");
-  const adminsCollection = client.db("LikeElectronics").collection("admins");
+    const serviceCollection = client.db("LikeElectronics").collection("services");
+    const reviewCollection = client.db("LikeElectronics").collection("reviews");
+    const adminsCollection = client.db("LikeElectronics").collection("admins");
+    const orderCollection = client.db("LikeElectronics").collection("orders");
 
-  app.get('/services', (req, res) => {
-    servicesCollection.find()
-    .toArray((err, items) => {
-      res.send(items)
+    app.get('/services', (req, res) => {
+        serviceCollection.find({})
+            .toArray((err, docs) => res.send(docs))
     })
-  })
-  app.post('/addService', (req, res) => {
-    const service = req.body;
-    servicesCollection.insertOne(service)
-    .then(result => {
-        res.send(result.insertedCount > 0)
+
+    app.get('/reviews', (req, res) => {
+        if (req.query.email) {
+            return reviewCollection.find({ email: req.query.email })
+                .toArray((err, docs) => res.send(docs[0]))
+        }
+        reviewCollection.find({})
+            .toArray((err, docs) => res.send(docs))
     })
-  })
-  app.delete('/delete/:id', (req, res) => {
-    const id = ObjectID(req.params.id);
-    console.log('delete this', id);
-    servicesCollection.findOneAndDelete({_id: id})
-    .then(documents => res.send(!!documents.value))
-  })
 
-  
-
-  app.get('/reviews', (req, res) => {
-    reviewsCollection.find()
-    .toArray((err, items) => {
-      res.send(items)
+    app.get('/orders', (req, res) => {
+        adminsCollection.find({ email: req.query.email })
+            .toArray((err, docs) => {
+                if (docs.length) {
+                    orderCollection.find({})
+                        .toArray((err, docs) => res.send(docs))
+                } else {
+                    orderCollection.find({ email: req.query.email })
+                        .toArray((err, docs) => res.send(docs))
+                }
+            })
     })
-  })
-  app.post('/addReview', (req, res) => {
-    const review = req.body;
-    reviewsCollection.insertOne(review)
-    .then(result => {
-        res.send(result.insertedCount > 0)
+
+    app.get('/isAdmin', (req, res) => {
+        adminsCollection.find({ email: req.query.email })
+            .toArray((err, docs) => res.send(!!docs.length))
     })
-  })
 
-
-  app.get('/orderLists', (req, res) => {
-    booksCollection.find()
-    .toArray((err, items) => {
-      res.send(items)
+    app.post('/addService', (req, res) => {
+        serviceCollection.insertOne(req.body)
+            .then(result => res.send(!!result.insertedCount))
     })
-  })
-  app.post('/bookingLists', (req, res) => {
-    const email = req.body.email;
-    adminsCollection.find({ email: email })
-    .toArray((err, admin) => {
-      booksCollection.find(email)
-      .toArray((err, documents) => {
-        // console.log(email,documents)
-        res.send(documents);
-      })
+
+    app.post('/addReview', (req, res) => {
+        reviewCollection.insertOne(req.body)
+            .then(result => res.send(!!result.insertedCount))
     })
-  })
-  app.post('/addBook', (req, res) => {
-    const book = req.body;
-    booksCollection.insertOne(book)
-    .then(result => {
-        res.send(result.insertedCount > 0)
+
+    app.post('/addAdmin', (req, res) => {
+        adminsCollection.insertOne(req.body)
+            .then(result => res.send(!!result.insertedCount))
     })
-  })
 
-  app.post('/makeAdmin', (req, res) => {
-    const admin = req.body;
-    adminsCollection.insertOne(admin)
-    .then(result => {
-        res.send(result.insertedCount > 0)
+    app.post('/addOrder', (req, res) => {
+        orderCollection.insertOne(req.body)
+            .then(result => res.send(!!result.insertedCount))
     })
-  })
 
-  app.post('/isAdmin', (req, res) => {
-    const email = req.body.email;
-    adminsCollection.find({ email: email })
-        .toArray((err, doctors) => {
-            res.send(doctors.length > 0);
-        })
-  })
+    app.patch('/updateOrderStatus', (req, res) => {
+        const { id, status } = req.body;
+        console.log(req.body);
+        orderCollection.findOneAndUpdate(
+            { _id: ObjectId(id) },
+            {
+                $set: { status },
+            }
+        ).then(result => res.send(result.lastErrorObject.updatedExisting))
+    })
 
+    app.patch('/update/:id', (req, res) => {
+        serviceCollection.updateOne(
+            { _id: ObjectId(req.params.id) },
+            {
+                $set: req.body
+            }
+        ).then(result => res.send(!!result.modifiedCount))
+    })
 
+    app.delete('/delete/:id', (req, res) => {
+        serviceCollection.deleteOne({ _id: ObjectId(req.params.id) })
+            .then(result => res.send(!!result.deletedCount))
+    })
+
+    app.patch('/updateReview/:id', (req, res) => {
+        reviewCollection.updateOne(
+            { _id: ObjectId(req.params.id) },
+            {
+                $set: req.body
+            }
+        ).then(result => res.send(!!result.modifiedCount))
+    })
+
+    app.delete('/deleteReview/:id', (req, res) => {
+        reviewCollection.deleteOne({ _id: ObjectId(req.params.id) })
+            .then(result => res.send(!!result.deletedCount))
+    })
 });
 
-
-app.listen(port, () => {
-  console.log(`Example app listening at http://localhost:${port}`)
-})
+app.listen(port);
